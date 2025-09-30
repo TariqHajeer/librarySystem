@@ -12,7 +12,7 @@ builder.Services.AddEndpointsApiExplorer(); // Required for minimal APIs and Swa
 builder.Services.AddSwaggerGen();
 
 
-builder.Services.InjectApplication();
+builder.Services.InjectApplication(builder.Configuration);
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnectionString");
 builder.Services.InjectDataAccessLayer(options =>
