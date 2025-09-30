@@ -1,0 +1,109 @@
+<div class="columns-4 mx-5 my-8">
+  <div class="flex flex-col">
+    <label for="Title">Title</label>
+    <input pInputText id="Title" [(ngModel)]="title" autocomplete="off" />
+  </div>
+  <div class="flex flex-col">
+    <label for="Author">Author</label>
+    <input pInputText id="Author" [(ngModel)]="author" autocomplete="off" />
+  </div>
+  <div class="flex flex-col">
+    <label for="ISBN">ISBN</label>
+    <input pInputText id="ISBN" [(ngModel)]="isbn" autocomplete="off" />
+  </div>
+  <div class="flex pt-6">
+    <p-button label="Search" icon="pi pi-search" iconPos="left" (onClick)="refreshTable()" />
+  </div>
+</div>
+<div class="m-5">
+  <p-table [value]="(books$ |async) ||[]" [paginator]="true" [rows]="5" [tableStyle]="{ 'min-width': '50rem' }"
+    [rowsPerPageOptions]="[5, 10, 20]" [lazy]="true" sortMode="single" [resizableColumns]="true"
+    [totalRecords]="(totalRec$ |async)||0" (onLazyLoad)="lazyLoad($event)">
+    <ng-template #header>
+      <tr>
+        <th>Title</th>
+        <th>Author</th>
+        <th>ISBN</th>
+        <th>Year</th>
+        <th>Total Copies</th>
+        <th>Available Copies</th>
+        <th></th>
+      </tr>
+    </ng-template>
+    <ng-template #body let-book>
+      <tr>
+        <td>
+          <div class="text-7xl">{{ book.title }}</div>
+        </td>
+        <td>{{ book.author }}</td>
+        <td>{{ book.genre }}</td>
+        <td>{{ book.year }}</td>
+        <td>{{ book.totalCopies }}</td>
+        <td>{{ book.availableCopies }}</td>
+        <td>
+          <p-button (click)="showBorrowDialog(book)" label="Borrow" size="small" styleClass="mx-2" />
+          <p-button (click)="showRetrieveDialog(book)" label="Retrieve" size="small" />
+        </td>
+      </tr>
+    </ng-template>
+  </p-table>
+</div>
+<p-dialog header="Borrow" [modal]="true" [(visible)]="borrowDialog" [style]="{ width: '25rem', height: '50vh' }">
+  <div class="flex mb-8">
+    <label for="username" class="font-semibold w-24">Username</label>
+    <p-select [options]="(users$ | async) || []" [(ngModel)]="user" optionLabel="fullName" [filter]="true"
+      filterBy="fullName" [showClear]="true" placeholder="Select a user" class="w-full md:w-56">
+      <ng-template #selectedItem let-selectedOption>
+        <div class="flex items-center gap-2">
+          <img
+            src="https://png.pngtree.com/png-clipart/20240610/original/pngtree-user-icon-brush-vector-png-image_15299640.png"
+            style="width: 2rem" />
+          <div>{{ selectedOption.fullName }}</div>
+        </div>
+      </ng-template>
+      <ng-template let-currentUser #item>
+        <div class="flex items-center gap-2">
+          <img
+            src="https://png.pngtree.com/png-clipart/20240610/original/pngtree-user-icon-brush-vector-png-image_15299640.png"
+            style="width: 2rem" />
+          <div>{{ currentUser.fullName }}</div>
+        </div>
+      </ng-template>
+    </p-select>
+  </div>
+  <div class="flex justify-end h-40 items-end">
+    <p-button label="Cancel" styleClass="mx-2" severity="secondary" (click)="borrowDialog = false" />
+    <p-button label="Borrow" (click)="onBorrowBook()" />
+  </div>
+</p-dialog>
+<p-dialog header="Retrieve" [modal]="true" [(visible)]="retrieveDialog" [style]="{ width: '25rem', height: '50vh' }">
+  <div class="flex mb-8">
+    <label for="username" class="font-semibold w-24">Username</label>
+    <p-select [options]="(users$ | async) || []" [(ngModel)]="user" optionLabel="fullName" optionValue="id"
+      [filter]="true" filterBy="name" [showClear]="true" placeholder="Select a user" class="w-full md:w-56">
+      <ng-template #selectedItem let-selectedOption>
+        <div class="flex items-center gap-2">
+          <img
+            src="https://png.pngtree.com/png-clipart/20240610/original/pngtree-user-icon-brush-vector-png-image_15299640.png"
+            style="width: 2rem" />
+          <div>{{ selectedOption.fullName }}</div>
+        </div>
+      </ng-template>
+      <ng-template let-currentUser #item>
+        <div class="flex items-center gap-2">
+          <img
+            src="https://png.pngtree.com/png-clipart/20240610/original/pngtree-user-icon-brush-vector-png-image_15299640.png"
+            style="width: 2rem" />
+          <div>{{ currentUser.fullName }}</div>
+        </div>
+      </ng-template>
+    </p-select>
+  </div>
+  <div class="flex justify-end h-40 items-end">
+    <p-button label="Cancel" styleClass="mx-2" severity="secondary" (click)="retrieveDialog = false" />
+    <p-button label="Retrieve" (click)="onRetrieveBook()" />
+  </div>
+</p-dialog>
+
+
+<p-toast position="top-left" key="tl" />
