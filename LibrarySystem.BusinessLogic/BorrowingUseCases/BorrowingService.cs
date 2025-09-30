@@ -1,9 +1,9 @@
 using LibrarySystem.BusinessLogic.BorrowingUseCases.Dtos;
 using LibrarySystem.BusinessLogic.Common;
 using LibrarySystem.BusinessLogic.Domain;
-using LibrarySystem.BusinessLogic.Helper;
 using LibrarySystem.BusinessLogic.Repos.Interfaces;
 using LibrarySystem.DataAccess.Exceptions;
+using RedisLocking;
 
 namespace LibrarySystem.BusinessLogic.BorrowingUseCases;
 
@@ -19,112 +19,110 @@ internal class BorrowingService : Service<Borrowing, Guid, CreateBorrowing, Borr
         _userRepo = userRepo;
     }
     public override async Task<Guid> Create(CreateBorrowing create)
+{
+    var lockKey = GetBorrowKey(create.BookId);
+    var user = await _userRepo.GetById(create.UserId) 
+               ?? throw new ConflictException("User does not exist.");
+    return await ExecuteWithRetry(async () =>
     {
-        var lockKey = GetBorrowKey(create.BookId);
-        var user = await _userRepo.GetById(create.UserId) ?? throw new ConflictException("user is not exists");
-        return await ExecuteWithRetry<Guid>(async () =>
+        var lockAcquired = await _lockService.RunWithLockAsync(lockKey, TimeSpan.FromSeconds(10), async () =>
         {
-            await _lockService.LockAsync(lockKey);
+            var book = await _bookRepo.GetById(create.BookId) ?? throw new ConflictException($"No book exists with ID {create.BookId}.");
+            if (book.AvailableCopies <= 0)
+                throw new ConflictException("No available copies.");
+
+            var data = await _repository.Get(new Dictionary<string, object>()
+            {
+                { nameof(Borrowing.UserId), create.UserId },
+                { nameof(Borrowing.BookId), create.BookId },
+                { nameof(Borrowing.ReturnDate), null }
+            }, 0, 1);
+
+            if (data.TotalCount == 1)
+                throw new ConflictException("You already have this book.");
+
+            await _repository.BeginTransaction(true);
 
             try
             {
-                var book = await _bookRepo.GetById(create.BookId);
-                if (book == null)
-                    throw new ConflictException($"no book exists {create.BookId}.");
-
-                if (book.AvailableCopies <= 0)
-                    throw new ConflictException($"no available copies.");
-
-                var data = await _repository.Get(new Dictionary<string, object>()
+                var id = await _repository.Insert(new Borrowing
                 {
-                {nameof(Borrowing.UserId), create.UserId},
-                {nameof(Borrowing.BookId), create.BookId},
-                {nameof(Borrowing.ReturnDate), null}
-                }, 0, 1);
+                    BookId = create.BookId,
+                    UserId = create.UserId,
+                    BorrowDate = create.BorrowDate
+                });
 
-                if (data.TotalCount == 1)
-                    throw new ConflictException($"you have the book already.");
+                book.AvailableCopies--;
+                await _bookRepo.Update(book);
 
-                await _repository.BeginTransaction(true);
-
-                try
-                {
-                    var id = await _repository.Insert(new Borrowing()
-                    {
-                        BookId = create.BookId,
-                        UserId = create.UserId,
-                        BorrowDate = create.BorrowDate
-                    });
-
-                    book.AvailableCopies--;
-                    await _bookRepo.Update(book);
-
-                    await _repository.CommitTransaction();
-                    return id;
-                }
-                catch
-                {
-                    await _repository.RollbackTransaction();
-                    throw;
-                }
+                await _repository.CommitTransaction();
+                return id;
             }
-            finally
+            catch
             {
-                _lockService.Release(lockKey);
+                await _repository.RollbackTransaction();
+                throw;
             }
         });
-    }
+        return lockAcquired;
+    });
+}
+
 
 
     public async Task ReturnBook(ReturnBook returnBook)
+{
+    var lockKey = GetBorrowKey(returnBook.BookId);
+    var user = await _userRepo.GetById(returnBook.UserId) 
+               ?? throw new ConflictException("User does not exist.");
+
+    await ExecuteWithRetry(async () =>
     {
-        var lockKey = GetBorrowKey(returnBook.BookId);
-        var user = await _userRepo.GetById(returnBook.UserId) ?? throw new ConflictException("user is not exists");
-        await ExecuteWithRetry(async () =>
+        // Using the new lock service with RunWithLockAsync
+        var lockAcquired = await _lockService.RunWithLockAsync(lockKey, TimeSpan.FromSeconds(10), async () =>
         {
-            await _lockService.LockAsync(lockKey);
+            var book = await _bookRepo.GetById(returnBook.BookId);
+            if (book == null)
+                throw new ConflictException($"No book exists with ID {returnBook.BookId}.");
+
+            var data = await _repository.Get(new Dictionary<string, object>()
+            {
+                { nameof(Borrowing.UserId), returnBook.UserId },
+                { nameof(Borrowing.BookId), returnBook.BookId },
+                { nameof(Borrowing.ReturnDate), null }
+            }, 0, 1);
+
+            if (data.TotalCount == 0)
+                throw new ConflictException("You haven't borrowed this book.");
+
+            await _repository.BeginTransaction(true);
 
             try
             {
-                var book = await _bookRepo.GetById(returnBook.BookId);
-                if (book == null)
-                    throw new ConflictException($"no book exists {returnBook.BookId}.");
+                var borrowing = data.Data.First();
+                borrowing.ReturnDate = returnBook.ReturnDate;
+                book.AvailableCopies++;
 
-                var data = await _repository.Get(new Dictionary<string, object>()
-                {
-                {nameof(Borrowing.UserId), returnBook.UserId},
-                {nameof(Borrowing.BookId), returnBook.BookId},
-                {nameof(Borrowing.ReturnDate), null}
-                }, 0, 1);
+                await _repository.Update(borrowing);
+                await _bookRepo.Update(book);
 
-                if (data.TotalCount == 0)
-                    throw new ConflictException($"you haven't borrow this book.");
-
-                await _repository.BeginTransaction(true);
-
-                try
-                {
-                    var borrowing = data.Data.First();
-                    borrowing.ReturnDate = returnBook.ReturnDate;
-                    book.AvailableCopies++;
-
-                    await _repository.Update(borrowing);
-                    await _bookRepo.Update(book);
-
-                    await _bookRepo.CommitTransaction();
-                }
-                catch
-                {
-                    await _repository.RollbackTransaction();
-                    throw;
-                }
+                await _bookRepo.CommitTransaction();
             }
-            finally
+            catch
             {
-                _lockService.Release(lockKey);
+                await _repository.RollbackTransaction();
+                throw;
             }
+
         });
-    }
+
+        if (!lockAcquired)
+        {
+            throw new ConflictException("Could not acquire lock, please try again later.");
+        }
+    });
+}
+
 
 
     public static string GetBorrowKey(Guid bookId)

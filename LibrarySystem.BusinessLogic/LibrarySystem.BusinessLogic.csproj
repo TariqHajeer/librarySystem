@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="../RedisLocking/RedisLocking.csproj" />
     <ProjectReference Include="..\LibrarySystem.DataAccess\LibrarySystem.DataAccess.csproj" />
   </ItemGroup>
 
